@@ -382,6 +382,19 @@ mod test {
         match_handle!(family.fonts()[3], "/Library/Fonts/Arial Italic.ttf", 0);
     }
 
+    #[test]
+    fn select_family_by_name_menlo() {
+        let family = SystemSource::new().select_family_by_name("Menlo").unwrap();
+        for handle in family.fonts() {
+            let font = handle.load().unwrap();
+            let weight = match font.postscript_name().unwrap().as_str() {
+                "Menlo-Bold" | "Menlo-BoldItalic" => font_kit::properties::Weight::BOLD,
+                _ => font_kit::properties::Weight::NORMAL,
+            };
+            assert_eq!(font.properties().weight, weight);
+        }
+    }
+
     #[allow(non_snake_case)]
     #[test]
     fn select_by_postscript_name_ArialMT() {
