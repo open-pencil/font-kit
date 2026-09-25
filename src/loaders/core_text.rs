@@ -11,6 +11,7 @@
 //! A loader that uses Apple's Core Text API to load and rasterize fonts.
 
 use byteorder::{BigEndian, ReadBytesExt};
+use core_foundation::base::CFIndex;
 use core_graphics::base::{kCGImageAlphaPremultipliedLast, CGFloat};
 use core_graphics::color_space::CGColorSpace;
 use core_graphics::context::{CGContext, CGTextDrawingMode};
@@ -79,21 +80,28 @@ impl Font {
         mut font_data: Arc<Vec<u8>>,
         font_index: u32,
     ) -> Result<Font, FontLoadingError> {
-        // Sadly, there's no API to load OpenType collections on macOS, I don't believe…
+        let mut collection_font = None;
+
         // If not otf/ttf or otc/ttc, we unpack it as data fork font.
         if !font_is_single_otf(&*font_data) && !font_is_collection(&*font_data) {
             let mut new_font_data = (*font_data).clone();
             unpack_data_fork_font(&mut new_font_data)?;
             font_data = Arc::new(new_font_data);
         } else if font_is_collection(&*font_data) {
+            // A font created from the unpacked buffer may report the traits (e.g. weight) of a
+            // previously loaded face, so let Core Text pick the face from the collection instead.
+            collection_font = core_text_font_from_collection(&*font_data, font_index);
             let mut new_font_data = (*font_data).clone();
             unpack_otc_font(&mut new_font_data, font_index)?;
             font_data = Arc::new(new_font_data);
         }
 
-        let core_text_font = match core_text::font::new_from_buffer(&*font_data) {
-            Ok(ct_font) => ct_font,
-            Err(_) => return Err(FontLoadingError::Parse),
+        let core_text_font = match collection_font {
+            Some(ct_font) => ct_font,
+            None => match core_text::font::new_from_buffer(&*font_data) {
+                Ok(ct_font) => ct_font,
+                Err(_) => return Err(FontLoadingError::Parse),
+            },
         };
 
         Ok(Font {
@@ -813,6 +821,18 @@ fn core_text_width_to_css_stretchiness(core_text_width: f32) -> Stretch {
 
 fn font_is_collection(header: &[u8]) -> bool {
     header.len() >= 4 && header[0..4] == TTC_TAG
+}
+
+/// Creates a Core Text font for one face of an OpenType collection, or returns `None` if Core Text
+/// does not report one descriptor per face.
+fn core_text_font_from_collection(font_data: &[u8], font_index: u32) -> Option<CTFont> {
+    let font_count = read_number_of_fonts_from_otc_header(font_data).ok()?;
+    let descriptors = core_text::font_manager::create_font_descriptors(font_data).ok()?;
+    if descriptors.len() != font_count as CFIndex {
+        return None;
+    }
+    let descriptor = descriptors.get(font_index as CFIndex)?;
+    Some(core_text::font::new_from_descriptor(&descriptor, 16.0))
 }
 
 fn read_number_of_fonts_from_otc_header(header: &[u8]) -> Result<u32, FontLoadingError> {

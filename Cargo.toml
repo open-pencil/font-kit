@@ -48,9 +48,11 @@ version = "0.3"
 features = ["dwrite", "minwindef", "sysinfoapi", "winbase", "winnt"]
 
 [target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
-core-foundation = "0.9"
-core-graphics = "0.23"
-core-text = "20.1.0"
+# Temporary: use crates.io releases once servo/core-foundation-rs publishes
+# core_text::font_manager::create_font_descriptors.
+core-foundation = { git = "https://github.com/open-pencil/core-foundation-rs", branch = "core-text-create-font-descriptors" }
+core-graphics = { git = "https://github.com/open-pencil/core-foundation-rs", branch = "core-text-create-font-descriptors" }
+core-text = { git = "https://github.com/open-pencil/core-foundation-rs", branch = "core-text-create-font-descriptors" }
 
 [target.'cfg(not(any(target_family = "windows", target_os = "macos", target_os = "ios")))'.dependencies]
 freetype-sys = "0.23"
